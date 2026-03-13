@@ -3,6 +3,14 @@
 import { useRef, useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import type { Zone, PlaceHotel } from "@/types/travel";
+
+// Dynamic imports to avoid SSR issues with Google Maps
+const ZoneMap     = dynamic(() => import("@/components/genera/ZoneMap"),     { ssr: false });
+const HotelPicker = dynamic(() => import("@/components/genera/HotelPicker"), { ssr: false });
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const STYLES = [
   { value: "avventura", label: "Avventura" },
@@ -27,14 +35,52 @@ const SPENDING_OPTIONS = [
 
 const DAY_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
-interface Hotel {
-  name: string;
-  neighborhood: string;
-  price: string;
-  why: string;
+const STEP_LABELS = ["Destinazione", "Zona", "Hotel", "Itinerario"];
+
+// ─── Step Indicator ──────────────────────────────────────────────────────────
+
+function StepIndicator({ current }: { current: number }) {
+  return (
+    <div className="mb-12 flex items-center justify-center">
+      {STEP_LABELS.map((label, i) => {
+        const n       = i + 1;
+        const active  = current === n;
+        const done    = current > n;
+        return (
+          <div key={n} className="flex items-center">
+            {i > 0 && (
+              <div
+                className="h-px w-8 transition-all duration-500 md:w-12"
+                style={{ backgroundColor: done ? "#006D77" : "rgba(255,255,255,0.08)" }}
+              />
+            )}
+            <div className="flex flex-col items-center gap-1.5">
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-full font-sans text-xs font-medium transition-all duration-300"
+                style={{
+                  backgroundColor: active ? "#006D77" : done ? "rgba(0,109,119,0.25)" : "transparent",
+                  border:          active ? "none" : done ? "1px solid rgba(0,109,119,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                  color:           active || done ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.2)",
+                }}
+              >
+                {done ? "✓" : n}
+              </div>
+              <span
+                className="hidden font-sans text-[10px] uppercase tracking-wider sm:block"
+                style={{ color: active ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.18)" }}
+              >
+                {label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-// Renders inline **bold** within a text string
+// ─── Markdown renderer ───────────────────────────────────────────────────────
+
 function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/);
   return parts.map((part, i) => {
@@ -50,7 +96,7 @@ function renderInline(text: string): React.ReactNode {
 }
 
 function renderItinerary(text: string) {
-  const lines = text.split("\n");
+  const lines    = text.split("\n");
   const elements: React.ReactNode[] = [];
 
   lines.forEach((line, i) => {
@@ -73,36 +119,26 @@ function renderItinerary(text: string) {
         </div>
       );
     } else if (/^- [🌅🍽🌆🌙]/.test(line)) {
-      // Emoji section header (e.g. "- 🌅 MATTINA & COLAZIONE:")
-      const content = line.slice(2);
       elements.push(
-        <p
-          key={i}
-          className="mt-6 mb-1.5 font-sans text-xs font-semibold uppercase tracking-[0.22em]"
-          style={{ color: "#006D77" }}
-        >
-          {content}
+        <p key={i} className="mt-5 mb-1 font-sans text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "#006D77" }}>
+          {line.slice(2)}
         </p>
       );
     } else if (line.startsWith("  - ")) {
-      // Nested bullet with possible **bold**
-      const content = line.slice(4);
       elements.push(
         <div key={i} className="flex items-start gap-2.5 py-0.5">
-          <span className="mt-1.5 shrink-0 h-1 w-1 rounded-full" style={{ backgroundColor: "#E29578" }} />
+          <span className="mt-2 h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: "#E29578" }} />
           <p className="font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
-            {renderInline(content)}
+            {renderInline(line.slice(4))}
           </p>
         </div>
       );
     } else if (line.startsWith("- ")) {
-      // Simple bullet
-      const content = line.slice(2);
       elements.push(
         <div key={i} className="flex items-start gap-2.5 py-0.5">
-          <span className="mt-1.5 shrink-0 h-1 w-1 rounded-full" style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
+          <span className="mt-2 h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
           <p className="font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
-            {renderInline(content)}
+            {renderInline(line.slice(2))}
           </p>
         </div>
       );
@@ -110,11 +146,7 @@ function renderItinerary(text: string) {
       elements.push(<div key={i} className="h-2" />);
     } else {
       elements.push(
-        <p
-          key={i}
-          className="font-sans text-base font-light leading-[1.85]"
-          style={{ color: "rgba(255,255,255,0.65)" }}
-        >
+        <p key={i} className="font-sans text-base font-light leading-[1.85]" style={{ color: "rgba(255,255,255,0.65)" }}>
           {renderInline(line)}
         </p>
       );
@@ -124,59 +156,38 @@ function renderItinerary(text: string) {
   return elements;
 }
 
+// ─── Main component ──────────────────────────────────────────────────────────
+
 function GeneraContent() {
   const searchParams = useSearchParams();
+
+  // Step: 1=form, 2=zone, 3=hotel, 4=itinerary
+  const [step, setStep]   = useState(1);
+
+  // Step 1 form
   const [destination, setDestination] = useState(searchParams.get("destinazione") ?? "");
   const [styles, setStyles]           = useState<string[]>([]);
   const [spending, setSpending]       = useState(3);
   const [days, setDays]               = useState(5);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
 
-  // Streaming state
-  const [rawContent, setRawContent]       = useState("");
-  const [hotels, setHotels]               = useState<Hotel[]>([]);
-  const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
-  const [itineraryText, setItineraryText] = useState("");
+  // Step 2 result
+  const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
 
-  const hotelSectionRef = useRef<HTMLDivElement>(null);
-  const itineraryRef    = useRef<HTMLDivElement>(null);
+  // Step 3 result
+  const [selectedHotel, setSelectedHotel] = useState<PlaceHotel | null>(null);
+
+  // Itinerary
+  const [itinerary, setItinerary] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+
+  const topRef       = useRef<HTMLDivElement>(null);
+  const itineraryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const dest = searchParams.get("destinazione");
     if (dest) setDestination(dest);
   }, [searchParams]);
-
-  // Parse hotel JSON and itinerary text as raw content streams in
-  useEffect(() => {
-    if (!rawContent) return;
-
-    const startMarker = "HOTELS_START\n";
-    const endMarker   = "\nHOTELS_END";
-    const startIdx = rawContent.indexOf(startMarker);
-    const endIdx   = rawContent.indexOf(endMarker);
-
-    if (startIdx >= 0 && endIdx > startIdx && hotels.length === 0) {
-      const jsonStr = rawContent.slice(startIdx + startMarker.length, endIdx).trim();
-      try {
-        const parsed: Hotel[] = JSON.parse(jsonStr);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setHotels(parsed);
-          setTimeout(() => hotelSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-        }
-      } catch {
-        // JSON not complete yet — keep waiting
-      }
-    }
-
-    if (endIdx >= 0) {
-      const after = rawContent.slice(endIdx + endMarker.length).trim();
-      setItineraryText(after);
-    } else if (startIdx < 0) {
-      // No hotel section found — treat all content as itinerary (fallback)
-      setItineraryText(rawContent);
-    }
-  }, [rawContent, hotels.length]);
 
   function toggleStyle(value: string) {
     setStyles((prev) =>
@@ -184,22 +195,40 @@ function GeneraContent() {
     );
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleStep1Submit(e: React.FormEvent) {
     e.preventDefault();
     if (!destination.trim()) return;
+    setStep(2);
+    setTimeout(() => topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
 
-    setLoading(true);
+  function handleZoneSelect(zone: Zone) {
+    setSelectedZone(zone);
+    setStep(3);
+    setTimeout(() => topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
+  async function handleHotelSelect(hotel: PlaceHotel) {
+    setSelectedHotel(hotel);
+    setStep(4);
+    setStreaming(true);
     setError(null);
-    setRawContent("");
-    setHotels([]);
-    setSelectedHotel(null);
-    setItineraryText("");
+    setItinerary("");
+
+    setTimeout(() => itineraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 
     try {
       const res = await fetch("/api/generate-itinerary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ destination, styles, spending, days }),
+        body: JSON.stringify({
+          destination,
+          styles,
+          spending,
+          days,
+          zone:  selectedZone,
+          hotel: { name: hotel.name, vicinity: hotel.vicinity },
+        }),
       });
 
       if (!res.ok) {
@@ -215,23 +244,27 @@ function GeneraContent() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        setRawContent((prev) => prev + decoder.decode(value, { stream: true }));
+        setItinerary((prev) => prev + decoder.decode(value, { stream: true }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
     } finally {
-      setLoading(false);
+      setStreaming(false);
     }
   }
 
-  function handleSelectHotel(hotel: Hotel) {
-    setSelectedHotel(hotel);
-    setTimeout(() => itineraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  function resetAll() {
+    setStep(1);
+    setDestination("");
+    setStyles([]);
+    setSpending(3);
+    setDays(5);
+    setSelectedZone(null);
+    setSelectedHotel(null);
+    setItinerary("");
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
-  const showHotels     = hotels.length > 0;
-  const showItinerary  = selectedHotel !== null && itineraryText.length > 0;
-  const stillStreaming = loading;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#0A0A0F" }}>
@@ -281,9 +314,10 @@ function GeneraContent() {
       </header>
 
       <main className="relative z-10 mx-auto max-w-3xl px-6 pb-24 pt-16 md:px-8">
+        <div ref={topRef} />
 
         {/* Page header */}
-        <div className="mb-14 text-center">
+        <div className="mb-10 text-center">
           <div className="mb-5 flex items-center justify-center gap-4">
             <div className="h-px w-8" style={{ backgroundColor: "#006D77" }} />
             <span className="font-sans text-xs font-light uppercase tracking-[0.35em]" style={{ color: "rgba(255,255,255,0.3)" }}>
@@ -294,259 +328,224 @@ function GeneraContent() {
           <h1 className="font-serif text-4xl font-light italic text-white/90 md:text-5xl">
             Genera il tuo itinerario
           </h1>
-          <p className="mt-4 font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Descrivi dove vuoi andare e ricevi una guida narrativa immersiva.
-          </p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <div
-            className="rounded-2xl p-8 md:p-10"
-            style={{ backgroundColor: "rgba(255,255,255,0.025)", border: "1px solid rgba(0,109,119,0.2)" }}
-          >
-            {/* Destination */}
-            <div className="mb-8">
-              <label className="mb-2 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
-                Destinazione
-              </label>
-              <div
-                className="flex items-center gap-3 border-b pb-2.5 transition-colors"
-                style={{ borderColor: destination ? "#006D77" : "rgba(255,255,255,0.12)" }}
-              >
-                <span className="font-serif text-base" style={{ color: destination ? "#E29578" : "rgba(255,255,255,0.2)" }}>✦</span>
-                <input
-                  type="text"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  placeholder="Tokyo, Giordania, Bali..."
-                  required
-                  className="w-full bg-transparent font-serif text-lg font-light text-white/85 outline-none placeholder:text-white/20"
-                />
-              </div>
-            </div>
+        {/* Step indicator */}
+        <StepIndicator current={step} />
 
-            {/* Style pills */}
-            <div className="mb-8">
-              <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
-                Stile di viaggio
-                <span className="ml-2 normal-case tracking-normal" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  (multi-selezione)
-                </span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {STYLES.map(({ value, label }) => {
-                  const active = styles.includes(value);
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => toggleStyle(value)}
-                      className="rounded-full px-3.5 py-1.5 font-sans text-xs font-light transition-all duration-200"
-                      style={{
-                        border: active ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.1)",
-                        backgroundColor: active ? "rgba(0,109,119,0.18)" : "transparent",
-                        color: active ? "#a8d8dc" : "rgba(255,255,255,0.4)",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Spending + Days */}
-            <div className="mb-8 grid gap-7 sm:grid-cols-2">
-              {/* Spending */}
-              <div>
-                <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  Budget di viaggio
+        {/* ── STEP 1: FORM ─────────────────────────────────────────────── */}
+        {step === 1 && (
+          <form onSubmit={handleStep1Submit}>
+            <div
+              className="rounded-2xl p-8 md:p-10"
+              style={{ backgroundColor: "rgba(255,255,255,0.025)", border: "1px solid rgba(0,109,119,0.2)" }}
+            >
+              {/* Destination */}
+              <div className="mb-8">
+                <label className="mb-2 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Destinazione
                 </label>
-                <div className="flex flex-col gap-1.5">
-                  {SPENDING_OPTIONS.map(({ value, euros, label }) => {
-                    const active = spending === value;
+                <div
+                  className="flex items-center gap-3 border-b pb-2.5"
+                  style={{ borderColor: destination ? "#006D77" : "rgba(255,255,255,0.12)" }}
+                >
+                  <span className="font-serif text-base" style={{ color: destination ? "#E29578" : "rgba(255,255,255,0.2)" }}>✦</span>
+                  <input
+                    type="text"
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="Tokyo, Giordania, Bali..."
+                    required
+                    className="w-full bg-transparent font-serif text-lg font-light text-white/85 outline-none placeholder:text-white/20"
+                  />
+                </div>
+              </div>
+
+              {/* Style pills */}
+              <div className="mb-8">
+                <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  Stile di viaggio
+                  <span className="ml-2 normal-case tracking-normal" style={{ color: "rgba(255,255,255,0.2)" }}>(multi-selezione)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {STYLES.map(({ value, label }) => {
+                    const active = styles.includes(value);
                     return (
                       <button
                         key={value}
                         type="button"
-                        onClick={() => setSpending(value)}
-                        className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-200"
+                        onClick={() => toggleStyle(value)}
+                        className="rounded-full px-3.5 py-1.5 font-sans text-xs font-light transition-all duration-200"
                         style={{
-                          border: active ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.06)",
-                          backgroundColor: active ? "rgba(0,109,119,0.12)" : "transparent",
+                          border: active ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.1)",
+                          backgroundColor: active ? "rgba(0,109,119,0.18)" : "transparent",
+                          color: active ? "#a8d8dc" : "rgba(255,255,255,0.4)",
                         }}
                       >
-                        <span
-                          className="font-mono text-sm"
-                          style={{ color: active ? "#E29578" : "rgba(255,255,255,0.25)", minWidth: "52px" }}
-                        >
-                          {euros}
-                        </span>
-                        <span className="font-sans text-xs" style={{ color: active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)" }}>
-                          {label}
-                        </span>
+                        {label}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Days */}
-              <div>
-                <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  Durata
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {DAY_OPTIONS.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setDays(d)}
-                      className="h-9 w-9 rounded-full font-sans text-sm font-light transition-all duration-200"
-                      style={{
-                        border: days === d ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.1)",
-                        backgroundColor: days === d ? "rgba(0,109,119,0.18)" : "transparent",
-                        color: days === d ? "#a8d8dc" : "rgba(255,255,255,0.4)",
-                      }}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 font-sans text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>giorni</p>
-              </div>
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading || !destination.trim()}
-              className="flex w-full items-center justify-center gap-3 rounded-full py-4 font-sans text-sm font-medium uppercase tracking-wider text-white transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ backgroundColor: loading ? "#004F57" : "#006D77" }}
-            >
-              {loading ? (
-                <>
-                  <span className="inline-flex gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <span
-                        key={i}
-                        className="inline-block h-1.5 w-1.5 rounded-full bg-white/60"
-                        style={{ animation: `bounce 1s ${i * 0.15}s infinite` }}
-                      />
-                    ))}
-                  </span>
-                  Sto creando il tuo itinerario...
-                </>
-              ) : (
-                <>
-                  Genera Itinerario
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-
-        {/* Error */}
-        {error && (
-          <div className="mt-6 rounded-xl px-6 py-4" style={{ backgroundColor: "rgba(226,149,120,0.08)", border: "1px solid rgba(226,149,120,0.2)" }}>
-            <p className="font-sans text-sm" style={{ color: "#E29578" }}>{error}</p>
-          </div>
-        )}
-
-        {/* Hotel selection */}
-        {showHotels && !selectedHotel && (
-          <div ref={hotelSectionRef} className="mt-14">
-            <div className="mb-8 flex items-center gap-4">
-              <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
-              <span className="font-sans text-xs uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,0.25)" }}>
-                Scegli il tuo hotel
-              </span>
-              <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
-            </div>
-            <p className="mb-6 text-center font-sans text-sm font-light" style={{ color: "rgba(255,255,255,0.35)" }}>
-              Seleziona dove alloggiare per sbloccare l&apos;itinerario
-            </p>
-
-            <div className="flex flex-col gap-4">
-              {hotels.map((hotel, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSelectHotel(hotel)}
-                  className="group w-full rounded-2xl p-6 text-left transition-all duration-300"
-                  style={{
-                    backgroundColor: "rgba(255,255,255,0.025)",
-                    border: "1px solid rgba(0,109,119,0.18)",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.borderColor = "#006D77";
-                    (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(0,109,119,0.08)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.borderColor = "rgba(0,109,119,0.18)";
-                    (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.025)";
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="font-serif text-lg font-light text-white/85">{hotel.name}</p>
-                      <p className="mt-0.5 font-sans text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-                        {hotel.neighborhood}
-                      </p>
-                      <p className="mt-3 font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                        {hotel.why}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="font-mono text-sm font-medium" style={{ color: "#E29578" }}>{hotel.price}</p>
-                      <p className="mt-2 font-sans text-[10px] uppercase tracking-widest opacity-0 transition-opacity duration-200 group-hover:opacity-100" style={{ color: "#006D77" }}>
-                        Scegli →
-                      </p>
-                    </div>
+              {/* Spending + Days */}
+              <div className="mb-8 grid gap-7 sm:grid-cols-2">
+                <div>
+                  <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    Budget
+                  </label>
+                  <div className="flex flex-col gap-1.5">
+                    {SPENDING_OPTIONS.map(({ value, euros, label }) => {
+                      const active = spending === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setSpending(value)}
+                          className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-200"
+                          style={{
+                            border: active ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.06)",
+                            backgroundColor: active ? "rgba(0,109,119,0.12)" : "transparent",
+                          }}
+                        >
+                          <span className="font-mono text-sm" style={{ color: active ? "#E29578" : "rgba(255,255,255,0.25)", minWidth: "52px" }}>
+                            {euros}
+                          </span>
+                          <span className="font-sans text-xs" style={{ color: active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)" }}>
+                            {label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
-              ))}
-            </div>
+                </div>
 
-            {stillStreaming && (
-              <p className="mt-6 text-center font-sans text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
-                Sto preparando l&apos;itinerario
-                <span className="inline-block h-3 w-0.5 ml-1 align-middle" style={{ animation: "cursor-blink 1s step-end infinite", backgroundColor: "#006D77" }} />
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Selected hotel badge + itinerary */}
-        {selectedHotel && (
-          <div ref={itineraryRef} className="mt-14">
-            {/* Selected hotel badge */}
-            <div
-              className="mb-10 flex items-center justify-between rounded-xl px-5 py-4"
-              style={{ backgroundColor: "rgba(0,109,119,0.08)", border: "1px solid rgba(0,109,119,0.22)" }}
-            >
-              <div>
-                <p className="font-sans text-[10px] uppercase tracking-widest" style={{ color: "#006D77" }}>
-                  Il tuo hotel
-                </p>
-                <p className="mt-0.5 font-serif text-base text-white/80">{selectedHotel.name}</p>
-                <p className="font-sans text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-                  {selectedHotel.neighborhood} · {selectedHotel.price}
-                </p>
+                <div>
+                  <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    Durata
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAY_OPTIONS.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDays(d)}
+                        className="h-9 w-9 rounded-full font-sans text-sm font-light transition-all duration-200"
+                        style={{
+                          border: days === d ? "1px solid #006D77" : "1px solid rgba(255,255,255,0.1)",
+                          backgroundColor: days === d ? "rgba(0,109,119,0.18)" : "transparent",
+                          color: days === d ? "#a8d8dc" : "rgba(255,255,255,0.4)",
+                        }}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 font-sans text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>giorni</p>
+                </div>
               </div>
+
+              {/* Submit */}
               <button
-                onClick={() => setSelectedHotel(null)}
-                className="font-sans text-xs transition-colors"
-                style={{ color: "rgba(255,255,255,0.2)" }}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#E29578")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.2)")}
+                type="submit"
+                disabled={!destination.trim()}
+                className="flex w-full items-center justify-center gap-3 rounded-full py-4 font-sans text-sm font-medium uppercase tracking-wider text-white transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110"
+                style={{ backgroundColor: "#006D77" }}
               >
-                cambia
+                Continua
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             </div>
+          </form>
+        )}
+
+        {/* ── STEP 2: ZONE MAP ─────────────────────────────────────────── */}
+        {step === 2 && (
+          <div>
+            <div className="mb-6 text-center">
+              <h2 className="font-serif text-2xl font-light italic text-white/80">
+                Scegli la zona di {destination}
+              </h2>
+              <p className="mt-2 font-sans text-sm font-light" style={{ color: "rgba(255,255,255,0.3)" }}>
+                Clicca una zona sulla mappa o selezionala dalla lista
+              </p>
+            </div>
+
+            <ZoneMap
+              destination={destination}
+              styles={styles}
+              spending={spending}
+              days={days}
+              onZoneSelect={handleZoneSelect}
+            />
+
+            <button
+              onClick={() => setStep(1)}
+              className="mt-6 font-sans text-xs uppercase tracking-widest transition-colors"
+              style={{ color: "rgba(255,255,255,0.2)" }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#E29578")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.2)")}
+            >
+              ← Torna alle preferenze
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 3: HOTEL PICKER ─────────────────────────────────────── */}
+        {step === 3 && selectedZone && (
+          <div>
+            <div className="mb-6 text-center">
+              <h2 className="font-serif text-2xl font-light italic text-white/80">
+                Hotel a {selectedZone.name}
+              </h2>
+              <p className="mt-2 font-sans text-sm font-light" style={{ color: "rgba(255,255,255,0.3)" }}>
+                Rating ≥ 4.0 · Filtrati per il tuo budget
+              </p>
+            </div>
+
+            <HotelPicker
+              zone={selectedZone}
+              spending={spending}
+              onHotelSelect={handleHotelSelect}
+            />
+
+            <button
+              onClick={() => setStep(2)}
+              className="mt-8 font-sans text-xs uppercase tracking-widest transition-colors"
+              style={{ color: "rgba(255,255,255,0.2)" }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#E29578")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.2)")}
+            >
+              ← Cambia zona
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 4: ITINERARY ────────────────────────────────────────── */}
+        {step === 4 && (
+          <div ref={itineraryRef}>
+            {/* Context summary */}
+            {selectedZone && selectedHotel && (
+              <div
+                className="mb-10 flex flex-wrap items-center gap-4 rounded-xl px-5 py-4"
+                style={{ backgroundColor: "rgba(0,109,119,0.06)", border: "1px solid rgba(0,109,119,0.18)" }}
+              >
+                <div className="flex-1">
+                  <p className="font-sans text-[10px] uppercase tracking-widest" style={{ color: "#006D77" }}>
+                    Il tuo viaggio
+                  </p>
+                  <p className="mt-0.5 font-serif text-base text-white/80">
+                    {destination} · {selectedZone.name}
+                  </p>
+                  <p className="font-sans text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+                    {selectedHotel.name} · {days} giorni · {"€".repeat(spending)}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Itinerary header */}
             <div className="mb-8 flex items-center gap-4">
@@ -557,10 +556,17 @@ function GeneraContent() {
               <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
             </div>
 
-            {/* Itinerary content */}
+            {/* Error */}
+            {error && (
+              <div className="mb-6 rounded-xl px-6 py-4" style={{ backgroundColor: "rgba(226,149,120,0.08)", border: "1px solid rgba(226,149,120,0.2)" }}>
+                <p className="font-sans text-sm" style={{ color: "#E29578" }}>{error}</p>
+              </div>
+            )}
+
+            {/* Content */}
             <div className="relative">
-              {renderItinerary(itineraryText)}
-              {stillStreaming && (
+              {renderItinerary(itinerary)}
+              {streaming && (
                 <span
                   className="inline-block h-4 w-0.5 align-middle"
                   style={{ animation: "cursor-blink 1s step-end infinite", backgroundColor: "#006D77", marginLeft: "2px" }}
@@ -568,7 +574,8 @@ function GeneraContent() {
               )}
             </div>
 
-            {!stillStreaming && itineraryText.length > 0 && (
+            {/* Done */}
+            {!streaming && itinerary.length > 0 && (
               <div className="mt-14 flex flex-col items-center gap-6 text-center">
                 <div className="flex items-center gap-3 opacity-40">
                   <div className="h-px w-10" style={{ backgroundColor: "#006D77" }} />
@@ -576,14 +583,7 @@ function GeneraContent() {
                   <div className="h-px w-10" style={{ backgroundColor: "#006D77" }} />
                 </div>
                 <button
-                  onClick={() => {
-                    setRawContent("");
-                    setHotels([]);
-                    setSelectedHotel(null);
-                    setItineraryText("");
-                    setDestination("");
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
+                  onClick={resetAll}
                   className="font-sans text-xs uppercase tracking-widest transition-colors"
                   style={{ color: "rgba(255,255,255,0.3)" }}
                   onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#006D77")}

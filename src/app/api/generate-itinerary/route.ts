@@ -16,29 +16,18 @@ const STYLE_LABELS: Record<string, string> = {
 
 function buildSpendingContext(spending: number): string {
   if (spending <= 2) {
-    return `BUDGET (${spending === 1 ? "€" : "€€"}): ostelli o guesthouse locali autentici, street food e trattorie economiche, mezzi pubblici, attività gratuite o low-cost.`;
+    return `BUDGET (${"€".repeat(spending)}): ostelli o guesthouse locali, street food e trattorie economiche, mezzi pubblici, attività gratuite o low-cost.`;
   }
   if (spending === 3) {
-    return `MID-RANGE (€€€): hotel 3-4 stelle ben posizionati, ristoranti locali di qualità, qualche esperienza a pagamento, mix di taxi e mezzi pubblici.`;
+    return `MID-RANGE (€€€): hotel 3-4 stelle, ristoranti locali di qualità, mix di taxi e mezzi pubblici.`;
   }
-  return `LUXURY (${"€".repeat(spending)}): hotel 5 stelle o boutique hotel di design, ristoranti gastronomici o stellati, esperienze private ed esclusive, transfer privati. Nessun compromesso.`;
+  return `LUXURY (${"€".repeat(spending)}): ristoranti gastronomici o stellati, esperienze private, transfer privati. Nessun compromesso.`;
 }
 
 const SYSTEM_PROMPT = `Sei GetSXplore, un travel companion AI che crea itinerari narrativi e immersivi in italiano.
 Il tuo stile è editoriale di lusso — come Condé Nast Traveller o National Geographic.
 
-STRUTTURA OUTPUT — DUE PARTI OBBLIGATORIE IN QUESTO ORDINE ESATTO:
-
-━━━ PARTE 1: HOTEL ━━━
-Proponi esattamente 3 hotel con nomi reali, coerenti con budget e stili scelti.
-Output ESATTO (nessuna variazione):
-
-HOTELS_START
-[{"name":"Nome Hotel Reale","neighborhood":"Quartiere","price":"€XXX-YYY/notte","why":"Perché è perfetto per questo viaggio e questi stili — max 2 frasi."},{"name":"...","neighborhood":"...","price":"...","why":"..."},{"name":"...","neighborhood":"...","price":"...","why":"..."}]
-HOTELS_END
-
-━━━ PARTE 2: ITINERARIO ━━━
-Inizia SUBITO dopo HOTELS_END, senza righe vuote extra.
+L'utente ha già scelto hotel e zona di riferimento. Crea l'itinerario giornaliero completo.
 
 Apri con 2-3 frasi evocative sulla destinazione (nessun titolo).
 
@@ -46,7 +35,7 @@ Per ogni giorno usa ESATTAMENTE questa struttura:
 
 ## Giorno N — Titolo Poetico della Giornata
 
-Paragrafo narrativo di 3-4 righe sul mood e l'atmosfera del giorno. Racconta la giornata come un filo narrativo — emozione, ritmo, senso del luogo.
+Paragrafo narrativo di 3-4 righe sul mood del giorno — emozione, atmosfera, ritmo.
 
 - 🌅 MATTINA & COLAZIONE:
   - **Nome posto reale** — Quartiere — cosa ordinare o fare di specifico
@@ -60,20 +49,20 @@ Paragrafo narrativo di 3-4 righe sul mood e l'atmosfera del giorno. Racconta la 
 
 - 🌙 SERA & CENA:
   - **Nome ristorante reale** — Quartiere — piatto — atmosfera in una frase
-  - Dopo cena: **Nome locale o luogo** — cosa fare/vedere
+  - Dopo cena: **Nome locale o luogo** — cosa fare
 
 ---
 
-[Ripeti per ogni giorno. Chiudi con un paragrafo poetico finale preceduto da ---]
+Chiudi con un paragrafo poetico finale (preceduto da ---).
 
 REGOLE TASSATIVE:
-- Nomi REALI sempre: ristoranti, bar, hotel, quartieri — mai generici o inventati
-- Coerenza geografica: ogni giornata si svolge in zone vicine, spostandosi logicamente
-- Adatta tutto (hotel, ristoranti, attività) al budget specificato
-- Niente hotel nelle sezioni giornaliere — solo mattina/pranzo/pomeriggio/sera`;
+- Nomi REALI sempre: ristoranti, bar, quartieri — mai generici o inventati
+- Coerenza geografica: ogni giornata si svolge vicino alla zona prescelta
+- Adatta tutto al budget specificato
+- Nessuna sezione hotel nei giorni (già scelto)`;
 
 export async function POST(req: NextRequest) {
-  const { destination, styles, spending, days } = await req.json();
+  const { destination, styles, spending, days, zone, hotel } = await req.json();
 
   if (!destination || !days) {
     return Response.json({ error: "Parametri mancanti" }, { status: 400 });
@@ -90,16 +79,24 @@ export async function POST(req: NextRequest) {
     ? styles
     : ["cultura"];
 
-  const stylesList = stylesArray.map((s) => STYLE_LABELS[s] ?? s).join(", ");
+  const stylesList = stylesArray.map((s: string) => STYLE_LABELS[s] ?? s).join(", ");
   const spendingContext = buildSpendingContext(spending ?? 3);
   const spendingEmoji = "€".repeat(spending ?? 3);
 
+  const zoneContext = zone
+    ? `\nZona base: ${zone.name} — ${zone.description}`
+    : "";
+
+  const hotelContext = hotel
+    ? `\nHotel scelto: ${hotel.name}, ${hotel.vicinity}`
+    : "";
+
   const userMessage = `Crea un itinerario di ${days} giorni a ${destination}.
 
-STILI: ${stylesList}
-BUDGET: ${spendingEmoji} — ${spendingContext}
+Stili: ${stylesList}
+Budget: ${spendingEmoji} — ${spendingContext}${zoneContext}${hotelContext}
 
-Segui la struttura esatta: prima HOTELS_START...HOTELS_END con 3 hotel JSON, poi l'itinerario giornaliero con le sezioni 🌅/🍽️/🌆/🌙. Tutto in italiano, nomi reali.`;
+Struttura ogni giorno con le sezioni 🌅/🍽️/🌆/🌙. Nomi reali di luoghi, ristoranti, bar. Tutto in italiano.`;
 
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
