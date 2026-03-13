@@ -14,19 +14,52 @@ const STYLE_LABELS: Record<string, string> = {
   offbeat:   "Off the beaten path",
 };
 
-const SYSTEM_PROMPT = `Sei un esperto di geografia urbana e travel planning. Dato una destinazione e le preferenze del viaggiatore, genera esattamente 4 quartieri o zone ideali da esplorare.
+// Extracts the first JSON array found in a string
+function extractJsonArray(text: string): unknown[] {
+  // Try direct parse first
+  try {
+    const parsed = JSON.parse(text.trim());
+    if (Array.isArray(parsed)) return parsed;
+  } catch {/* fall through */}
 
-OUTPUT: Solo JSON valido. Nessun testo aggiuntivo, nessun markdown, nessuna spiegazione prima o dopo il JSON.
+  // Strip markdown fences
+  const stripped = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  try {
+    const parsed = JSON.parse(stripped);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {/* fall through */}
 
-FORMATO ESATTO (array di 4 oggetti):
-[{"id":"z1","name":"Nome Quartiere Reale","description":"2-3 frasi su cosa offre questo quartiere e perché è perfetto per questo viaggiatore.","atmosphere":"Keyword1 · Keyword2 · Keyword3","center":{"lat":XX.XXXX,"lng":XX.XXXX},"radius":600},{"id":"z2","name":"...","description":"...","atmosphere":"...","center":{"lat":XX.XXXX,"lng":XX.XXXX},"radius":700},{"id":"z3","name":"...","description":"...","atmosphere":"...","center":{"lat":XX.XXXX,"lng":XX.XXXX},"radius":500},{"id":"z4","name":"...","description":"...","atmosphere":"...","center":{"lat":XX.XXXX,"lng":XX.XXXX},"radius":600}]
+  // Extract first [...] block
+  const start = text.indexOf("[");
+  const end   = text.lastIndexOf("]");
+  if (start !== -1 && end > start) {
+    try {
+      const parsed = JSON.parse(text.slice(start, end + 1));
+      if (Array.isArray(parsed)) return parsed;
+    } catch {/* fall through */}
+  }
 
-REGOLE:
-- Usa nomi di quartieri REALI e conosciuti della città
-- Coordinate GPS accurate e realistiche per la città indicata
-- radius tra 400 e 900 metri, adattato all'estensione del quartiere
-- Le zone devono essere diverse tra loro e coprire aree geografiche diverse della città
-- Adatta le scelte agli stili e al budget del viaggiatore`;
+  throw new Error("Nessun array JSON trovato nella risposta");
+}
+
+const SYSTEM_PROMPT = `Sei un esperto di geografia urbana. Dato una destinazione e preferenze di viaggio, restituisci SOLO un array JSON con esattamente 4 quartieri ideali. Nessun testo prima o dopo. Nessun markdown.
+
+Formato (rispetta esattamente questa struttura):
+[
+  {
+    "id": "z1",
+    "name": "Nome Quartiere",
+    "description": "2-3 frasi sul quartiere e perché è ideale per questo viaggiatore.",
+    "atmosphere": "Keyword1 · Keyword2 · Keyword3",
+    "center": {"lat": 00.0000, "lng": 00.0000},
+    "radius": 600
+  },
+  {"id":"z2","name":"...","description":"...","atmosphere":"...","center":{"lat":0,"lng":0},"radius":600},
+  {"id":"z3","name":"...","description":"...","atmosphere":"...","center":{"lat":0,"lng":0},"radius":600},
+  {"id":"z4","name":"...","description":"...","atmosphere":"...","center":{"lat":0,"lng":0},"radius":600}
+]
+
+Usa nomi di quartieri REALI con coordinate GPS accurate per la città.`;
 
 export async function POST(req: NextRequest) {
   const { destination, styles, spending } = await req.json();
@@ -46,36 +79,35 @@ export async function POST(req: NextRequest) {
     ? styles
     : ["cultura"];
 
-  const stylesList = stylesArray.map((s) => STYLE_LABELS[s] ?? s).join(", ");
-  const spendingLabel = spending <= 2 ? "budget/economico" : spending === 3 ? "mid-range" : "luxury";
+  const stylesList   = stylesArray.map((s) => STYLE_LABELS[s] ?? s).join(", ");
+  const spendingNum  = Number(spending) || 3;
+  const spendingLabel = spendingNum <= 2 ? "budget" : spendingNum === 3 ? "mid-range" : "luxury";
 
   const userMessage = `Destinazione: ${destination}
-Stili di viaggio: ${stylesList}
+Stili: ${stylesList}
 Budget: ${spendingLabel}
 
-Genera 4 zone/quartieri ideali. Solo JSON.`;
+Restituisci SOLO il JSON array con 4 zone.`;
 
   try {
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     });
 
     const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const zones = extractJsonArray(text);
 
-    // Strip any markdown code fences if Claude adds them
-    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-
-    const zones = JSON.parse(cleaned);
-
-    if (!Array.isArray(zones) || zones.length === 0) {
-      throw new Error("Formato zone non valido");
+    if (zones.length === 0) {
+      return Response.json({ error: "Nessuna zona generata" }, { status: 500 });
     }
 
     return Response.json(zones);
-  } catch {
-    return Response.json({ error: "Errore nella generazione delle zone" }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Errore sconosciuto";
+    console.error("[generate-zones]", message);
+    return Response.json({ error: message }, { status: 500 });
   }
 }

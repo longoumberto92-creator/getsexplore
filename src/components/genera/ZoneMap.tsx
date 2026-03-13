@@ -45,9 +45,10 @@ export default function ZoneMap({ destination, styles, spending, days, onZoneSel
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ destination, styles, spending, days }),
     })
-      .then((r) => {
-        if (!r.ok) throw new Error("Errore caricamento zone");
-        return r.json();
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data?.error ?? "Errore caricamento zone");
+        return data;
       })
       .then((data: Zone[]) => {
         setZones(data);
