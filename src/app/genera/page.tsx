@@ -5,29 +5,50 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const STYLES = [
-  { value: "avventura",      label: "Avventura" },
-  { value: "lusso",          label: "Lusso" },
-  { value: "cultura",        label: "Cultura" },
-  { value: "cibo",           label: "Cibo & Cucina" },
-  { value: "natura",         label: "Natura" },
-  { value: "relax",          label: "Relax" },
-  { value: "nightlife",      label: "Nightlife" },
-  { value: "shopping",       label: "Shopping" },
-  { value: "arte",           label: "Arte" },
-  { value: "offbeat",        label: "Off the beaten path" },
+  { value: "avventura", label: "Avventura" },
+  { value: "lusso",     label: "Lusso" },
+  { value: "cultura",   label: "Cultura" },
+  { value: "cibo",      label: "Cibo & Cucina" },
+  { value: "natura",    label: "Natura" },
+  { value: "relax",     label: "Relax" },
+  { value: "nightlife", label: "Nightlife" },
+  { value: "shopping",  label: "Shopping" },
+  { value: "arte",      label: "Arte" },
+  { value: "offbeat",   label: "Off the beaten path" },
 ];
 
 const SPENDING_OPTIONS = [
-  { value: 1, euros: "€",      label: "Budget" },
-  { value: 2, euros: "€€",     label: "Economico" },
-  { value: 3, euros: "€€€",    label: "Mid-range" },
-  { value: 4, euros: "€€€€",   label: "Premium" },
-  { value: 5, euros: "€€€€€",  label: "Lusso" },
+  { value: 1, euros: "€",     label: "Budget" },
+  { value: 2, euros: "€€",    label: "Economico" },
+  { value: 3, euros: "€€€",   label: "Mid-range" },
+  { value: 4, euros: "€€€€",  label: "Premium" },
+  { value: 5, euros: "€€€€€", label: "Lusso" },
 ];
 
 const DAY_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
-// Markdown renderer: ## day headings, ### section headings, --- separators
+interface Hotel {
+  name: string;
+  neighborhood: string;
+  price: string;
+  why: string;
+}
+
+// Renders inline **bold** within a text string
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={i} style={{ color: "rgba(255,255,255,0.92)", fontWeight: 600 }}>
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 function renderItinerary(text: string) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
@@ -36,26 +57,12 @@ function renderItinerary(text: string) {
     if (line.startsWith("## ")) {
       const [dayPart, ...rest] = line.replace("## ", "").split("—");
       elements.push(
-        <h3
-          key={i}
-          className="mt-12 mb-4 font-serif text-2xl font-light text-white/90 md:text-3xl"
-        >
+        <h3 key={i} className="mt-12 mb-3 font-serif text-2xl font-light text-white/90 md:text-3xl">
           <span style={{ color: "#006D77" }}>{dayPart.trim()}</span>
           {rest.length > 0 && (
             <span style={{ color: "#E29578" }}>{" — " + rest.join("—").trim()}</span>
           )}
         </h3>
-      );
-    } else if (line.startsWith("### ")) {
-      const sectionName = line.replace("### ", "").replace(":", "").trim();
-      elements.push(
-        <p
-          key={i}
-          className="mt-6 mb-1.5 font-sans text-xs font-semibold uppercase tracking-[0.25em]"
-          style={{ color: "#006D77" }}
-        >
-          {sectionName}
-        </p>
       );
     } else if (line.trim() === "---") {
       elements.push(
@@ -63,6 +70,40 @@ function renderItinerary(text: string) {
           <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
           <span style={{ color: "#E29578", opacity: 0.6 }}>✦</span>
           <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
+        </div>
+      );
+    } else if (/^- [🌅🍽🌆🌙]/.test(line)) {
+      // Emoji section header (e.g. "- 🌅 MATTINA & COLAZIONE:")
+      const content = line.slice(2);
+      elements.push(
+        <p
+          key={i}
+          className="mt-6 mb-1.5 font-sans text-xs font-semibold uppercase tracking-[0.22em]"
+          style={{ color: "#006D77" }}
+        >
+          {content}
+        </p>
+      );
+    } else if (line.startsWith("  - ")) {
+      // Nested bullet with possible **bold**
+      const content = line.slice(4);
+      elements.push(
+        <div key={i} className="flex items-start gap-2.5 py-0.5">
+          <span className="mt-1.5 shrink-0 h-1 w-1 rounded-full" style={{ backgroundColor: "#E29578" }} />
+          <p className="font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+            {renderInline(content)}
+          </p>
+        </div>
+      );
+    } else if (line.startsWith("- ")) {
+      // Simple bullet
+      const content = line.slice(2);
+      elements.push(
+        <div key={i} className="flex items-start gap-2.5 py-0.5">
+          <span className="mt-1.5 shrink-0 h-1 w-1 rounded-full" style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
+          <p className="font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.6)" }}>
+            {renderInline(content)}
+          </p>
         </div>
       );
     } else if (line.trim() === "") {
@@ -74,7 +115,7 @@ function renderItinerary(text: string) {
           className="font-sans text-base font-light leading-[1.85]"
           style={{ color: "rgba(255,255,255,0.65)" }}
         >
-          {line}
+          {renderInline(line)}
         </p>
       );
     }
@@ -89,15 +130,53 @@ function GeneraContent() {
   const [styles, setStyles]           = useState<string[]>([]);
   const [spending, setSpending]       = useState(3);
   const [days, setDays]               = useState(5);
-  const [itinerary, setItinerary]     = useState("");
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+
+  // Streaming state
+  const [rawContent, setRawContent]       = useState("");
+  const [hotels, setHotels]               = useState<Hotel[]>([]);
+  const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
+  const [itineraryText, setItineraryText] = useState("");
+
+  const hotelSectionRef = useRef<HTMLDivElement>(null);
+  const itineraryRef    = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const dest = searchParams.get("destinazione");
     if (dest) setDestination(dest);
   }, [searchParams]);
+
+  // Parse hotel JSON and itinerary text as raw content streams in
+  useEffect(() => {
+    if (!rawContent) return;
+
+    const startMarker = "HOTELS_START\n";
+    const endMarker   = "\nHOTELS_END";
+    const startIdx = rawContent.indexOf(startMarker);
+    const endIdx   = rawContent.indexOf(endMarker);
+
+    if (startIdx >= 0 && endIdx > startIdx && hotels.length === 0) {
+      const jsonStr = rawContent.slice(startIdx + startMarker.length, endIdx).trim();
+      try {
+        const parsed: Hotel[] = JSON.parse(jsonStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setHotels(parsed);
+          setTimeout(() => hotelSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+        }
+      } catch {
+        // JSON not complete yet — keep waiting
+      }
+    }
+
+    if (endIdx >= 0) {
+      const after = rawContent.slice(endIdx + endMarker.length).trim();
+      setItineraryText(after);
+    } else if (startIdx < 0) {
+      // No hotel section found — treat all content as itinerary (fallback)
+      setItineraryText(rawContent);
+    }
+  }, [rawContent, hotels.length]);
 
   function toggleStyle(value: string) {
     setStyles((prev) =>
@@ -111,9 +190,10 @@ function GeneraContent() {
 
     setLoading(true);
     setError(null);
-    setItinerary("");
-
-    setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
+    setRawContent("");
+    setHotels([]);
+    setSelectedHotel(null);
+    setItineraryText("");
 
     try {
       const res = await fetch("/api/generate-itinerary", {
@@ -129,13 +209,13 @@ function GeneraContent() {
 
       if (!res.body) throw new Error("Nessuna risposta ricevuta");
 
-      const reader = res.body.getReader();
+      const reader  = res.body.getReader();
       const decoder = new TextDecoder();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        setItinerary((prev) => prev + decoder.decode(value, { stream: true }));
+        setRawContent((prev) => prev + decoder.decode(value, { stream: true }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore sconosciuto");
@@ -144,17 +224,21 @@ function GeneraContent() {
     }
   }
 
-  const hasResult = itinerary.length > 0;
-  const canSubmit = !loading && destination.trim().length > 0;
+  function handleSelectHotel(hotel: Hotel) {
+    setSelectedHotel(hotel);
+    setTimeout(() => itineraryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  }
+
+  const showHotels     = hotels.length > 0;
+  const showItinerary  = selectedHotel !== null && itineraryText.length > 0;
+  const stillStreaming = loading;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#0A0A0F" }}>
       {/* Ambient glow */}
       <div
         className="pointer-events-none fixed inset-0"
-        style={{
-          background: "radial-gradient(ellipse 80% 50% at 50% 0%, #006D7722 0%, transparent 60%)",
-        }}
+        style={{ background: "radial-gradient(ellipse 80% 50% at 50% 0%, #006D7722 0%, transparent 60%)" }}
       />
 
       {/* Navbar */}
@@ -202,10 +286,7 @@ function GeneraContent() {
         <div className="mb-14 text-center">
           <div className="mb-5 flex items-center justify-center gap-4">
             <div className="h-px w-8" style={{ backgroundColor: "#006D77" }} />
-            <span
-              className="font-sans text-xs font-light uppercase tracking-[0.35em]"
-              style={{ color: "rgba(255,255,255,0.3)" }}
-            >
+            <span className="font-sans text-xs font-light uppercase tracking-[0.35em]" style={{ color: "rgba(255,255,255,0.3)" }}>
               AI Travel Planner
             </span>
             <div className="h-px w-8" style={{ backgroundColor: "#006D77" }} />
@@ -213,10 +294,7 @@ function GeneraContent() {
           <h1 className="font-serif text-4xl font-light italic text-white/90 md:text-5xl">
             Genera il tuo itinerario
           </h1>
-          <p
-            className="mt-4 font-sans text-sm font-light leading-relaxed"
-            style={{ color: "rgba(255,255,255,0.35)" }}
-          >
+          <p className="mt-4 font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.35)" }}>
             Descrivi dove vuoi andare e ricevi una guida narrativa immersiva.
           </p>
         </div>
@@ -225,29 +303,18 @@ function GeneraContent() {
         <form onSubmit={handleSubmit}>
           <div
             className="rounded-2xl p-8 md:p-10"
-            style={{
-              backgroundColor: "rgba(255,255,255,0.025)",
-              border: "1px solid rgba(0,109,119,0.2)",
-            }}
+            style={{ backgroundColor: "rgba(255,255,255,0.025)", border: "1px solid rgba(0,109,119,0.2)" }}
           >
             {/* Destination */}
             <div className="mb-8">
-              <label
-                className="mb-2 block font-sans text-xs font-medium uppercase tracking-widest"
-                style={{ color: "rgba(255,255,255,0.35)" }}
-              >
+              <label className="mb-2 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
                 Destinazione
               </label>
               <div
                 className="flex items-center gap-3 border-b pb-2.5 transition-colors"
                 style={{ borderColor: destination ? "#006D77" : "rgba(255,255,255,0.12)" }}
               >
-                <span
-                  className="font-serif text-base"
-                  style={{ color: destination ? "#E29578" : "rgba(255,255,255,0.2)" }}
-                >
-                  ✦
-                </span>
+                <span className="font-serif text-base" style={{ color: destination ? "#E29578" : "rgba(255,255,255,0.2)" }}>✦</span>
                 <input
                   type="text"
                   value={destination}
@@ -261,13 +328,10 @@ function GeneraContent() {
 
             {/* Style pills */}
             <div className="mb-8">
-              <label
-                className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest"
-                style={{ color: "rgba(255,255,255,0.35)" }}
-              >
+              <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
                 Stile di viaggio
                 <span className="ml-2 normal-case tracking-normal" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  (seleziona più stili)
+                  (multi-selezione)
                 </span>
               </label>
               <div className="flex flex-wrap gap-2">
@@ -292,14 +356,11 @@ function GeneraContent() {
               </div>
             </div>
 
-            {/* Spending + Days row */}
+            {/* Spending + Days */}
             <div className="mb-8 grid gap-7 sm:grid-cols-2">
               {/* Spending */}
               <div>
-                <label
-                  className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest"
-                  style={{ color: "rgba(255,255,255,0.35)" }}
-                >
+                <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
                   Budget di viaggio
                 </label>
                 <div className="flex flex-col gap-1.5">
@@ -322,10 +383,7 @@ function GeneraContent() {
                         >
                           {euros}
                         </span>
-                        <span
-                          className="font-sans text-xs"
-                          style={{ color: active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)" }}
-                        >
+                        <span className="font-sans text-xs" style={{ color: active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)" }}>
                           {label}
                         </span>
                       </button>
@@ -336,10 +394,7 @@ function GeneraContent() {
 
               {/* Days */}
               <div>
-                <label
-                  className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest"
-                  style={{ color: "rgba(255,255,255,0.35)" }}
-                >
+                <label className="mb-3 block font-sans text-xs font-medium uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
                   Durata
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -359,16 +414,14 @@ function GeneraContent() {
                     </button>
                   ))}
                 </div>
-                <p className="mt-2 font-sans text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  giorni
-                </p>
+                <p className="mt-2 font-sans text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>giorni</p>
               </div>
             </div>
 
             {/* Submit */}
             <button
               type="submit"
-              disabled={!canSubmit}
+              disabled={loading || !destination.trim()}
               className="flex w-full items-center justify-center gap-3 rounded-full py-4 font-sans text-sm font-medium uppercase tracking-wider text-white transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40"
               style={{ backgroundColor: loading ? "#004F57" : "#006D77" }}
             >
@@ -399,43 +452,123 @@ function GeneraContent() {
 
         {/* Error */}
         {error && (
-          <div
-            className="mt-6 rounded-xl px-6 py-4"
-            style={{ backgroundColor: "rgba(226,149,120,0.08)", border: "1px solid rgba(226,149,120,0.2)" }}
-          >
+          <div className="mt-6 rounded-xl px-6 py-4" style={{ backgroundColor: "rgba(226,149,120,0.08)", border: "1px solid rgba(226,149,120,0.2)" }}>
             <p className="font-sans text-sm" style={{ color: "#E29578" }}>{error}</p>
           </div>
         )}
 
-        {/* Result */}
-        {(hasResult || loading) && (
-          <div ref={resultRef} className="mt-14">
+        {/* Hotel selection */}
+        {showHotels && !selectedHotel && (
+          <div ref={hotelSectionRef} className="mt-14">
             <div className="mb-8 flex items-center gap-4">
               <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
-              <span
-                className="font-sans text-xs uppercase tracking-[0.3em]"
-                style={{ color: "rgba(255,255,255,0.25)" }}
+              <span className="font-sans text-xs uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,0.25)" }}>
+                Scegli il tuo hotel
+              </span>
+              <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
+            </div>
+            <p className="mb-6 text-center font-sans text-sm font-light" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Seleziona dove alloggiare per sbloccare l&apos;itinerario
+            </p>
+
+            <div className="flex flex-col gap-4">
+              {hotels.map((hotel, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSelectHotel(hotel)}
+                  className="group w-full rounded-2xl p-6 text-left transition-all duration-300"
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.025)",
+                    border: "1px solid rgba(0,109,119,0.18)",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "#006D77";
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(0,109,119,0.08)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "rgba(0,109,119,0.18)";
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.025)";
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <p className="font-serif text-lg font-light text-white/85">{hotel.name}</p>
+                      <p className="mt-0.5 font-sans text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        {hotel.neighborhood}
+                      </p>
+                      <p className="mt-3 font-sans text-sm font-light leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
+                        {hotel.why}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="font-mono text-sm font-medium" style={{ color: "#E29578" }}>{hotel.price}</p>
+                      <p className="mt-2 font-sans text-[10px] uppercase tracking-widest opacity-0 transition-opacity duration-200 group-hover:opacity-100" style={{ color: "#006D77" }}>
+                        Scegli →
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {stillStreaming && (
+              <p className="mt-6 text-center font-sans text-xs" style={{ color: "rgba(255,255,255,0.2)" }}>
+                Sto preparando l&apos;itinerario
+                <span className="inline-block h-3 w-0.5 ml-1 align-middle" style={{ animation: "cursor-blink 1s step-end infinite", backgroundColor: "#006D77" }} />
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Selected hotel badge + itinerary */}
+        {selectedHotel && (
+          <div ref={itineraryRef} className="mt-14">
+            {/* Selected hotel badge */}
+            <div
+              className="mb-10 flex items-center justify-between rounded-xl px-5 py-4"
+              style={{ backgroundColor: "rgba(0,109,119,0.08)", border: "1px solid rgba(0,109,119,0.22)" }}
+            >
+              <div>
+                <p className="font-sans text-[10px] uppercase tracking-widest" style={{ color: "#006D77" }}>
+                  Il tuo hotel
+                </p>
+                <p className="mt-0.5 font-serif text-base text-white/80">{selectedHotel.name}</p>
+                <p className="font-sans text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  {selectedHotel.neighborhood} · {selectedHotel.price}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedHotel(null)}
+                className="font-sans text-xs transition-colors"
+                style={{ color: "rgba(255,255,255,0.2)" }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "#E29578")}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.2)")}
               >
+                cambia
+              </button>
+            </div>
+
+            {/* Itinerary header */}
+            <div className="mb-8 flex items-center gap-4">
+              <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
+              <span className="font-sans text-xs uppercase tracking-[0.3em]" style={{ color: "rgba(255,255,255,0.25)" }}>
                 Il tuo itinerario
               </span>
               <div className="h-px flex-1" style={{ backgroundColor: "rgba(0,109,119,0.3)" }} />
             </div>
 
+            {/* Itinerary content */}
             <div className="relative">
-              {renderItinerary(itinerary)}
-              {loading && (
+              {renderItinerary(itineraryText)}
+              {stillStreaming && (
                 <span
                   className="inline-block h-4 w-0.5 align-middle"
-                  style={{
-                    animation: "cursor-blink 1s step-end infinite",
-                    backgroundColor: "#006D77",
-                    marginLeft: "2px",
-                  }}
+                  style={{ animation: "cursor-blink 1s step-end infinite", backgroundColor: "#006D77", marginLeft: "2px" }}
                 />
               )}
             </div>
 
-            {!loading && hasResult && (
+            {!stillStreaming && itineraryText.length > 0 && (
               <div className="mt-14 flex flex-col items-center gap-6 text-center">
                 <div className="flex items-center gap-3 opacity-40">
                   <div className="h-px w-10" style={{ backgroundColor: "#006D77" }} />
@@ -444,7 +577,10 @@ function GeneraContent() {
                 </div>
                 <button
                   onClick={() => {
-                    setItinerary("");
+                    setRawContent("");
+                    setHotels([]);
+                    setSelectedHotel(null);
+                    setItineraryText("");
                     setDestination("");
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}

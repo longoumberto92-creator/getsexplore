@@ -16,59 +16,61 @@ const STYLE_LABELS: Record<string, string> = {
 
 function buildSpendingContext(spending: number): string {
   if (spending <= 2) {
-    return `BUDGET (€${spending === 1 ? "" : "€"}): ostelli o guesthouse locali, street food e trattorie economiche, mezzi pubblici, attività gratuite o low-cost. Niente luxury, ma autenticità al massimo.`;
+    return `BUDGET (${spending === 1 ? "€" : "€€"}): ostelli o guesthouse locali autentici, street food e trattorie economiche, mezzi pubblici, attività gratuite o low-cost.`;
   }
   if (spending === 3) {
-    return `MID-RANGE (€€€): hotel 3-4 stelle ben posizionati, ristoranti locali di qualità (non stellati), qualche esperienza a pagamento, mix di taxi e mezzi pubblici.`;
+    return `MID-RANGE (€€€): hotel 3-4 stelle ben posizionati, ristoranti locali di qualità, qualche esperienza a pagamento, mix di taxi e mezzi pubblici.`;
   }
-  return `LUXURY (€${"€".repeat(spending - 1)}): hotel 5 stelle o boutique hotel di design, ristoranti gastronomici o stellati, esperienze private ed esclusive, transfer privati. Nessun compromesso.`;
+  return `LUXURY (${"€".repeat(spending)}): hotel 5 stelle o boutique hotel di design, ristoranti gastronomici o stellati, esperienze private ed esclusive, transfer privati. Nessun compromesso.`;
 }
 
-const SYSTEM_PROMPT = `Sei GetSXplore, un travel companion AI che crea itinerari di viaggio narrativi e immersivi in italiano.
-Il tuo stile è editoriale di lusso — come un articolo di Condé Nast Traveller o National Geographic.
+const SYSTEM_PROMPT = `Sei GetSXplore, un travel companion AI che crea itinerari narrativi e immersivi in italiano.
+Il tuo stile è editoriale di lusso — come Condé Nast Traveller o National Geographic.
 
-Non elenchi posti: racconti esperienze. Ogni giorno ha un filo narrativo, un'emozione, un ritmo.
+STRUTTURA OUTPUT — DUE PARTI OBBLIGATORIE IN QUESTO ORDINE ESATTO:
 
-STRUTTURA OBBLIGATORIA PER OGNI GIORNO:
+━━━ PARTE 1: HOTEL ━━━
+Proponi esattamente 3 hotel con nomi reali, coerenti con budget e stili scelti.
+Output ESATTO (nessuna variazione):
 
-## Giorno N — [Titolo Poetico del Giorno]
+HOTELS_START
+[{"name":"Nome Hotel Reale","neighborhood":"Quartiere","price":"€XXX-YYY/notte","why":"Perché è perfetto per questo viaggio e questi stili — max 2 frasi."},{"name":"...","neighborhood":"...","price":"...","why":"..."},{"name":"...","neighborhood":"...","price":"...","why":"..."}]
+HOTELS_END
 
-[2-3 frasi di apertura narrativa che introducono il mood del giorno]
+━━━ PARTE 2: ITINERARIO ━━━
+Inizia SUBITO dopo HOTELS_END, senza righe vuote extra.
 
-### MATTINA
+Apri con 2-3 frasi evocative sulla destinazione (nessun titolo).
 
-[Descrizione narrativa della mattina. Se colazione non inclusa nell'hotel: suggerisci 1 caffetteria o bar locale specifico con nome, zona e perché è speciale. Poi attività mattutina immersiva.]
+Per ogni giorno usa ESATTAMENTE questa struttura:
 
-### PRANZO
+## Giorno N — Titolo Poetico della Giornata
 
-[1 ristorante specifico con nome reale, zona/quartiere, piatto consigliato. Coerente con spending level. Racconta perché vale la pena.]
+Paragrafo narrativo di 3-4 righe sul mood e l'atmosfera del giorno. Racconta la giornata come un filo narrativo — emozione, ritmo, senso del luogo.
 
-### POMERIGGIO
+- 🌅 MATTINA & COLAZIONE:
+  - **Nome posto reale** — Quartiere — cosa ordinare o fare di specifico
 
-[1-2 attività con descrizione immersiva. Luoghi specifici con nomi reali, non generici.]
+- 🍽️ PRANZO:
+  - **Nome ristorante reale** — Quartiere — piatto consigliato — fascia prezzo (€/€€/€€€/€€€€)
 
-### SERA
+- 🌆 POMERIGGIO:
+  - Attività specifica 1 con dettagli concreti
+  - Attività specifica 2 con dettagli concreti
 
-[Ristorante per cena specifico e narrativo. Dopo cena: suggerisci 1 bar, locale o passeggiata serale. Tutto con nomi reali.]
-
-### HOTEL
-
-[1 hotel coerente con spending level: nome reale, zona, perché è perfetto per questo itinerario. Se l'itinerario prevede spostamenti tra città diverse, indica un hotel per ogni tappa.]
+- 🌙 SERA & CENA:
+  - **Nome ristorante reale** — Quartiere — piatto — atmosfera in una frase
+  - Dopo cena: **Nome locale o luogo** — cosa fare/vedere
 
 ---
 
-[Separatore --- tra ogni giorno]
+[Ripeti per ogni giorno. Chiudi con un paragrafo poetico finale preceduto da ---]
 
-APERTURA E CHIUSURA:
-- Apri con 2-3 frasi evocative sulla destinazione e lo spirito del viaggio (prima del Giorno 1, nessun titolo)
-- Chiudi con un breve paragrafo poetico senza titolo (preceduto da ---)
-
-REGOLE FONDAMENTALI:
-- Nomi REALI sempre: ristoranti, bar, hotel, quartieri, strade — mai nomi generici o inventati
-- Sii specifico e autentico, mai turistico o banale
-- Bilancia poesia e praticità: ogni frase deve essere bella E utile
-- Coerenza geografica: ogni giornata deve spostarsi in modo logico, minimizzando i trasferimenti inutili
-- Adatta tono, ritmo e scelte allo stile e al budget richiesto`;
+REGOLE TASSATIVE:
+- Nomi REALI sempre: ristoranti, bar, hotel, quartieri — mai generici o inventati
+- Coerenza geografica: ogni giornata si svolge in zone vicine, spostandosi logicamente
+- Adatta tutto (hotel, ristoranti, attività) al budget specificato
+- Niente hotel nelle sezioni giornaliere — solo mattina/pranzo/pomeriggio/sera`;
 
 export async function POST(req: NextRequest) {
   const { destination, styles, spending, days } = await req.json();
@@ -88,20 +90,16 @@ export async function POST(req: NextRequest) {
     ? styles
     : ["cultura"];
 
-  const stylesList = stylesArray
-    .map((s) => STYLE_LABELS[s] ?? s)
-    .join(", ");
-
+  const stylesList = stylesArray.map((s) => STYLE_LABELS[s] ?? s).join(", ");
   const spendingContext = buildSpendingContext(spending ?? 3);
   const spendingEmoji = "€".repeat(spending ?? 3);
 
   const userMessage = `Crea un itinerario di ${days} giorni a ${destination}.
 
-STILI DI VIAGGIO RICHIESTI: ${stylesList}
+STILI: ${stylesList}
 BUDGET: ${spendingEmoji} — ${spendingContext}
 
-Segui scrupolosamente la struttura per ogni giorno (## Giorno N, ### MATTINA, ### PRANZO, ### POMERIGGIO, ### SERA, ### HOTEL).
-Scrivi in italiano, con il tuo stile narrativo editoriale. Usa nomi reali di luoghi, ristoranti e hotel.`;
+Segui la struttura esatta: prima HOTELS_START...HOTELS_END con 3 hotel JSON, poi l'itinerario giornaliero con le sezioni 🌅/🍽️/🌆/🌙. Tutto in italiano, nomi reali.`;
 
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
