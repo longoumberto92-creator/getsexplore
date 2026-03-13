@@ -4,11 +4,12 @@ import { useRef, useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import type { Zone, PlaceHotel } from "@/types/travel";
+import type { Zone, PlaceHotel, MapDayData } from "@/types/travel";
 
 // Dynamic imports to avoid SSR issues with Google Maps
 const ZoneMap     = dynamic(() => import("@/components/genera/ZoneMap"),     { ssr: false });
 const HotelPicker = dynamic(() => import("@/components/genera/HotelPicker"), { ssr: false });
+const DayMap      = dynamic(() => import("@/components/genera/DayMap"),      { ssr: false });
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -95,12 +96,28 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-function renderItinerary(text: string) {
+function renderItinerary(text: string, mapData: MapDayData[]) {
   const lines    = text.split("\n");
   const elements: React.ReactNode[] = [];
+  let currentDay = 0;
+
+  function injectDayMap() {
+    const dayInfo = mapData.find((d) => d.day === currentDay);
+    if (dayInfo && dayInfo.places.length > 0) {
+      elements.push(
+        <DayMap key={`map-day-${currentDay}`} places={dayInfo.places} />
+      );
+    }
+  }
 
   lines.forEach((line, i) => {
     if (line.startsWith("## ")) {
+      // Before starting a new day, inject map for previous day
+      if (currentDay > 0) injectDayMap();
+
+      const dayMatch = line.match(/\d+/);
+      currentDay = dayMatch ? parseInt(dayMatch[0], 10) : currentDay + 1;
+
       const [dayPart, ...rest] = line.replace("## ", "").split("—");
       elements.push(
         <h3 key={i} className="mt-12 mb-3 font-serif text-2xl font-light text-white/90 md:text-3xl">
@@ -153,6 +170,9 @@ function renderItinerary(text: string) {
     }
   });
 
+  // Inject map for the last day (no trailing ---)
+  if (currentDay > 0) injectDayMap();
+
   return elements;
 }
 
@@ -181,6 +201,10 @@ function GeneraContent() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
+  // Day maps
+  const [mapData, setMapData]       = useState<MapDayData[]>([]);
+  const mapFetchedRef               = useRef(false);
+
   const topRef       = useRef<HTMLDivElement>(null);
   const itineraryRef = useRef<HTMLDivElement>(null);
 
@@ -188,6 +212,28 @@ function GeneraContent() {
     const dest = searchParams.get("destinazione");
     if (dest) setDestination(dest);
   }, [searchParams]);
+
+  // Fetch map data once streaming completes
+  useEffect(() => {
+    if (streaming || itinerary.length === 0 || mapFetchedRef.current) return;
+    mapFetchedRef.current = true;
+
+    fetch("/api/generate-map-data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itinerary,
+        destination,
+        zone: selectedZone?.name ?? "",
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setMapData(data as MapDayData[]);
+      })
+      .catch(() => {/* silently ignore — maps are a progressive enhancement */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streaming, itinerary]);
 
   function toggleStyle(value: string) {
     setStyles((prev) =>
@@ -263,6 +309,8 @@ function GeneraContent() {
     setSelectedHotel(null);
     setItinerary("");
     setError(null);
+    setMapData([]);
+    mapFetchedRef.current = false;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -565,7 +613,7 @@ function GeneraContent() {
 
             {/* Content */}
             <div className="relative">
-              {renderItinerary(itinerary)}
+              {renderItinerary(itinerary, mapData)}
               {streaming && (
                 <span
                   className="inline-block h-4 w-0.5 align-middle"

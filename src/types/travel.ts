@@ -16,3 +16,17 @@ export interface PlaceHotel {
   vicinity: string;
   photoUrl: string | null;
 }
+
+export interface MapPlace {
+  name: string;
+  lat: number;
+  lng: number;
+  order: number;
+  type: string;
+  description: string;
+}
+
+export interface MapDayData {
+  day: number;
+  places: MapPlace[];
+}
