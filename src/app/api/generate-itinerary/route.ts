@@ -2,34 +2,78 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 
 const STYLE_LABELS: Record<string, string> = {
-  avventura: "avventura e adrenalina — hiking, sport estremi, esperienze fuori dai sentieri battuti",
-  lusso: "lusso e raffinatezza — hotel boutique, ristoranti stellati, esperienze esclusive",
-  cultura: "cultura e storia — musei, siti UNESCO, architettura, incontri con la gente del posto",
-  cibo: "gastronomia e food culture — mercati locali, chef table, street food autentico, vino",
-  natura: "natura e slow travel — parchi naturali, alba in montagna, silenzio e paesaggi mozzafiato",
+  avventura: "Avventura",
+  lusso:     "Lusso",
+  cultura:   "Cultura",
+  cibo:      "Cibo & Cucina",
+  natura:    "Natura",
+  relax:     "Relax",
+  nightlife: "Nightlife",
+  shopping:  "Shopping",
+  arte:      "Arte",
+  offbeat:   "Off the beaten path",
 };
 
+function buildSpendingContext(spending: number): string {
+  if (spending <= 2) {
+    return `BUDGET (€${spending === 1 ? "" : "€"}): ostelli o guesthouse locali, street food e trattorie economiche, mezzi pubblici, attività gratuite o low-cost. Niente luxury, ma autenticità al massimo.`;
+  }
+  if (spending === 3) {
+    return `MID-RANGE (€€€): hotel 3-4 stelle ben posizionati, ristoranti locali di qualità (non stellati), qualche esperienza a pagamento, mix di taxi e mezzi pubblici.`;
+  }
+  return `LUXURY (€${"€".repeat(spending - 1)}): hotel 5 stelle o boutique hotel di design, ristoranti gastronomici o stellati, esperienze private ed esclusive, transfer privati. Nessun compromesso.`;
+}
+
 const SYSTEM_PROMPT = `Sei GetSXplore, un travel companion AI che crea itinerari di viaggio narrativi e immersivi in italiano.
-Il tuo stile è editoriale di lusso — come un articolo di Condé Nast Traveller o un pezzo di National Geographic.
+Il tuo stile è editoriale di lusso — come un articolo di Condé Nast Traveller o National Geographic.
 
 Non elenchi posti: racconti esperienze. Ogni giorno ha un filo narrativo, un'emozione, un ritmo.
 
-FORMATO OBBLIGATORIO:
-- Apri con 2-3 frasi evocative sulla destinazione e lo spirito del viaggio (nessun titolo, testo libero)
-- Per ogni giornata usa esattamente: "## Giorno N — [Titolo Poetico]" seguito da un punto a capo
-- Ogni giornata: mattina, pomeriggio, sera — narrati come un racconto continuo, non come lista
-- Chiudi con un breve paragrafo poetico senza titolo ("---" prima come separatore)
+STRUTTURA OBBLIGATORIA PER OGNI GIORNO:
 
-REGOLE:
-- Nomi reali: ristoranti, quartieri, strade, locali — mai generici
+## Giorno N — [Titolo Poetico del Giorno]
+
+[2-3 frasi di apertura narrativa che introducono il mood del giorno]
+
+### MATTINA
+
+[Descrizione narrativa della mattina. Se colazione non inclusa nell'hotel: suggerisci 1 caffetteria o bar locale specifico con nome, zona e perché è speciale. Poi attività mattutina immersiva.]
+
+### PRANZO
+
+[1 ristorante specifico con nome reale, zona/quartiere, piatto consigliato. Coerente con spending level. Racconta perché vale la pena.]
+
+### POMERIGGIO
+
+[1-2 attività con descrizione immersiva. Luoghi specifici con nomi reali, non generici.]
+
+### SERA
+
+[Ristorante per cena specifico e narrativo. Dopo cena: suggerisci 1 bar, locale o passeggiata serale. Tutto con nomi reali.]
+
+### HOTEL
+
+[1 hotel coerente con spending level: nome reale, zona, perché è perfetto per questo itinerario. Se l'itinerario prevede spostamenti tra città diverse, indica un hotel per ogni tappa.]
+
+---
+
+[Separatore --- tra ogni giorno]
+
+APERTURA E CHIUSURA:
+- Apri con 2-3 frasi evocative sulla destinazione e lo spirito del viaggio (prima del Giorno 1, nessun titolo)
+- Chiudi con un breve paragrafo poetico senza titolo (preceduto da ---)
+
+REGOLE FONDAMENTALI:
+- Nomi REALI sempre: ristoranti, bar, hotel, quartieri, strade — mai nomi generici o inventati
 - Sii specifico e autentico, mai turistico o banale
 - Bilancia poesia e praticità: ogni frase deve essere bella E utile
-- Adatta tono e ritmo allo stile richiesto dal viaggiatore`;
+- Coerenza geografica: ogni giornata deve spostarsi in modo logico, minimizzando i trasferimenti inutili
+- Adatta tono, ritmo e scelte allo stile e al budget richiesto`;
 
 export async function POST(req: NextRequest) {
-  const { destination, style, days } = await req.json();
+  const { destination, styles, spending, days } = await req.json();
 
-  if (!destination || !style || !days) {
+  if (!destination || !days) {
     return Response.json({ error: "Parametri mancanti" }, { status: 400 });
   }
 
@@ -39,16 +83,29 @@ export async function POST(req: NextRequest) {
   }
 
   const client = new Anthropic({ apiKey });
-  const styleLabel = STYLE_LABELS[style] ?? style;
+
+  const stylesArray: string[] = Array.isArray(styles) && styles.length > 0
+    ? styles
+    : ["cultura"];
+
+  const stylesList = stylesArray
+    .map((s) => STYLE_LABELS[s] ?? s)
+    .join(", ");
+
+  const spendingContext = buildSpendingContext(spending ?? 3);
+  const spendingEmoji = "€".repeat(spending ?? 3);
 
   const userMessage = `Crea un itinerario di ${days} giorni a ${destination}.
-Stile di viaggio: ${styleLabel}.
-Scrivi in italiano, con il tuo stile narrativo editoriale.`;
 
-  // Stream the response directly to the client
+STILI DI VIAGGIO RICHIESTI: ${stylesList}
+BUDGET: ${spendingEmoji} — ${spendingContext}
+
+Segui scrupolosamente la struttura per ogni giorno (## Giorno N, ### MATTINA, ### PRANZO, ### POMERIGGIO, ### SERA, ### HOTEL).
+Scrivi in italiano, con il tuo stile narrativo editoriale. Usa nomi reali di luoghi, ristoranti e hotel.`;
+
   const stream = client.messages.stream({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
+    model: "claude-sonnet-4-6",
+    max_tokens: 8000,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userMessage }],
   });
