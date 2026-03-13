@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 const STYLES = [
@@ -62,14 +63,21 @@ function renderItinerary(text: string) {
   return elements;
 }
 
-export default function GeneraPage() {
-  const [destination, setDestination] = useState("");
+function GeneraContent() {
+  const searchParams = useSearchParams();
+  const [destination, setDestination] = useState(searchParams.get("destinazione") ?? "");
   const [style, setStyle]             = useState("cultura");
   const [days, setDays]               = useState(5);
   const [itinerary, setItinerary]     = useState("");
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
+
+  // Auto-submit if destination comes pre-filled from URL
+  useEffect(() => {
+    const dest = searchParams.get("destinazione");
+    if (dest) setDestination(dest);
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -136,7 +144,6 @@ export default function GeneraPage() {
         <nav className="hidden items-center gap-8 md:flex">
           {[
             { label: "Come funziona", href: "/#come-funziona" },
-            { label: "Genera Itinerario", href: "/genera" },
             { label: "Blog", href: "/blog" },
             { label: "Accedi", href: "/login" },
           ].map(({ label, href }) => (
@@ -351,5 +358,13 @@ export default function GeneraPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function GeneraPage() {
+  return (
+    <Suspense>
+      <GeneraContent />
+    </Suspense>
   );
 }

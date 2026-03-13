@@ -1,53 +1,43 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTravelContext } from "@/context/TravelContext";
-import { getHeroPhotoUrl } from "@/data/destinations";
 import DestinationInput from "@/components/DestinationInput";
 
+const SLIDES = [
+  { url: "https://images.unsplash.com/photo-1529268209110-88f8a3462b43?w=1920&q=80&auto=format&fit=crop", caption: "Heart Reef, Australia" },
+  { url: "https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=1920&q=80&auto=format&fit=crop", caption: "Fushimi Inari, Kyoto" },
+  { url: "https://images.unsplash.com/photo-1517821099606-cef63a9bcda6?w=1920&q=80&auto=format&fit=crop", caption: "Sahara, Marocco" },
+  { url: "https://images.unsplash.com/photo-1537996134470-1b5b91f91b1d?w=1920&q=80&auto=format&fit=crop", caption: "Tegalalang, Bali" },
+  { url: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?w=1920&q=80&auto=format&fit=crop", caption: "Santorini, Grecia" },
+  { url: "https://images.unsplash.com/photo-1548786811-f89e8d8d1c3e?w=1920&q=80&auto=format&fit=crop", caption: "Petra, Giordania" },
+];
+
+const INTERVAL_MS   = 5000;
+const FADE_DURATION = 1500; // ms — matches CSS transition
+
 export default function HeroSection() {
-  const { inputValue } = useTravelContext();
+  const [activeIdx, setActiveIdx] = useState(0);
+  // Track which slides are preloaded to avoid showing broken images
+  const [ready, setReady] = useState<Set<number>>(new Set([0]));
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Double-buffer crossfade: layers[0] and layers[1] alternate
-  const [layers, setLayers] = useState<[string | null, string | null]>([null, null]);
-  const [active, setActive] = useState<0 | 1>(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentUrlRef = useRef<string | null>(null);
-
+  // Preload all slides on mount
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const newUrl = getHeroPhotoUrl(inputValue);
-      if (newUrl === currentUrlRef.current) return;
-      currentUrlRef.current = newUrl;
-
-      const next = active === 0 ? 1 : 0;
-
-      if (!newUrl) {
-        // Fade out everything: clear both layers after transition
-        setActive(next);
-        setLayers([null, null]);
-        return;
-      }
-
-      // Preload image, then crossfade in
+    SLIDES.forEach((slide, i) => {
+      if (i === 0) return; // first slide assumed ready immediately
       const img = new window.Image();
-      img.src = newUrl;
-      const show = () => {
-        setLayers((prev) => {
-          const updated = [...prev] as [string | null, string | null];
-          updated[next] = newUrl;
-          return updated;
-        });
-        setActive(next);
-      };
-      img.onload = show;
-      // Fallback if image fails or takes too long
-      img.onerror = show;
-    }, 350);
+      img.src = slide.url;
+      img.onload = () => setReady((prev) => new Set([...prev, i]));
+    });
+  }, []);
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [inputValue, active]);
+  // Auto-advance every 5 seconds
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      setActiveIdx((prev) => (prev + 1) % SLIDES.length);
+    }, INTERVAL_MS);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, []);
 
   return (
     <main
@@ -55,57 +45,38 @@ export default function HeroSection() {
       className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6"
       style={{ backgroundColor: "#0A0A0F" }}
     >
-      {/* ─── Background image layers (crossfade) ──────────────────────────── */}
-      {([0, 1] as const).map((i) => (
+      {/* ─── Slideshow layers ─────────────────────────────────────────────── */}
+      {SLIDES.map((slide, i) => (
         <div
-          key={i}
+          key={slide.url}
           className="pointer-events-none absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: layers[i] ? `url(${layers[i]})` : "none",
-            opacity: layers[i] && i === active ? 1 : 0,
-            transition: "opacity 0.8s ease",
+            backgroundImage: ready.has(i) ? `url(${slide.url})` : "none",
+            opacity: i === activeIdx ? 1 : 0,
+            transition: `opacity ${FADE_DURATION}ms ease-in-out`,
             zIndex: 0,
           }}
         />
       ))}
 
-      {/* Dark overlay — always on, extra dark when no image */}
+      {/* Dark overlay — 0.5 opacity over the image */}
       <div
-        className="pointer-events-none absolute inset-0 transition-opacity duration-700"
+        className="pointer-events-none absolute inset-0"
         style={{
-          background: "linear-gradient(to bottom, rgba(10,10,15,0.55) 0%, rgba(10,10,15,0.72) 60%, #0A0A0F 100%)",
+          background: "linear-gradient(to bottom, rgba(10,10,15,0.5) 0%, rgba(10,10,15,0.6) 55%, #0A0A0F 100%)",
           zIndex: 1,
-          opacity: layers[active] ? 1 : 0,
         }}
       />
 
-      {/* ─── Static ambient layers (shown when no image) ──────────────────── */}
-      <div className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
-        <div
-          className="absolute inset-0"
-          style={{ background: "radial-gradient(ellipse 90% 55% at 50% 105%, #006D7730 0%, transparent 70%)" }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: "radial-gradient(ellipse 50% 40% at 10% 75%, #E2957818 0%, transparent 65%)" }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: "linear-gradient(to right, rgba(10,10,15,0.6) 0%, transparent 30%, transparent 70%, rgba(10,10,15,0.6) 100%)" }}
-        />
-        <div
-          className="absolute bottom-0 left-0 right-0 h-48"
-          style={{ background: "linear-gradient(to top, #0A0A0F 0%, transparent 100%)" }}
-        />
-        <div
-          className="absolute inset-0 opacity-[0.035]"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-            backgroundRepeat: "repeat",
-            backgroundSize: "128px 128px",
-          }}
-        />
-      </div>
+      {/* Grain texture */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          backgroundSize: "128px 128px",
+          zIndex: 1,
+        }}
+      />
 
       {/* ─── Content ──────────────────────────────────────────────────────── */}
       <div
@@ -116,7 +87,7 @@ export default function HeroSection() {
           <div className="h-px w-10" style={{ backgroundColor: "#006D77" }} />
           <span
             className="font-sans text-xs font-light uppercase tracking-[0.35em]"
-            style={{ color: "rgba(255,255,255,0.35)" }}
+            style={{ color: "rgba(255,255,255,0.45)" }}
           >
             Travel Companion AI
           </span>
@@ -133,7 +104,7 @@ export default function HeroSection() {
         <p
           className="mb-14 max-w-lg font-sans text-base font-light leading-relaxed md:text-lg"
           style={{
-            color: "rgba(255,255,255,0.42)",
+            color: "rgba(255,255,255,0.5)",
             animation: "fade-up 0.9s 0.15s cubic-bezier(0.16,1,0.3,1) both",
           }}
         >
@@ -149,21 +120,37 @@ export default function HeroSection() {
         </div>
       </div>
 
-      {/* Scroll hint */}
+      {/* Slide caption — bottom left */}
       <div
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+        className="absolute bottom-12 left-8 md:left-14"
         style={{ zIndex: 2, animation: "fade-in 1.5s 1.2s ease both" }}
       >
-        <span
-          className="font-sans text-[10px] uppercase tracking-[0.35em]"
-          style={{ color: "rgba(255,255,255,0.2)" }}
+        <p
+          className="font-sans text-[10px] uppercase tracking-[0.3em]"
+          style={{ color: "rgba(255,255,255,0.25)" }}
         >
-          Scopri
-        </span>
-        <div
-          className="h-10 w-px"
-          style={{ background: "linear-gradient(to bottom, rgba(255,255,255,0.25), transparent)" }}
-        />
+          {SLIDES[activeIdx].caption}
+        </p>
+      </div>
+
+      {/* Slide dots — bottom centre */}
+      <div
+        className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2"
+        style={{ zIndex: 2, animation: "fade-in 1.5s 1.2s ease both" }}
+      >
+        {SLIDES.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setActiveIdx(i)}
+            className="rounded-full transition-all duration-500"
+            style={{
+              width: i === activeIdx ? "20px" : "6px",
+              height: "6px",
+              backgroundColor: i === activeIdx ? "#006D77" : "rgba(255,255,255,0.25)",
+            }}
+            aria-label={`Slide ${i + 1}`}
+          />
+        ))}
       </div>
     </main>
   );

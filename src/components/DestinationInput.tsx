@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useRef } from "react";
+import Link from "next/link";
 import { useTravelContext } from "@/context/TravelContext";
 
 const PLACEHOLDERS = [
@@ -19,7 +20,6 @@ const ERASE_SPEED  = 30;
 export default function DestinationInput() {
   const { inputValue, setInputValue } = useTravelContext();
 
-  // Typewriter — driven by a ref + forceRender, so it doesn't re-render the parent
   const displayRef = useRef("");
   const [, forceRender] = useReducer((n: number) => n + 1, 0);
   const indexRef = useRef(0);
@@ -60,15 +60,18 @@ export default function DestinationInput() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
+  const hasInput = inputValue.length > 0;
+
   return (
-    <div className="group relative w-full max-w-xl">
+    <div className="relative w-full max-w-xl">
+      {/* Input row */}
       <div
         className="flex items-center gap-3 border-b pb-3 transition-colors duration-300"
-        style={{ borderColor: inputValue ? "#006D77" : "rgba(255,255,255,0.2)" }}
+        style={{ borderColor: hasInput ? "#006D77" : "rgba(255,255,255,0.2)" }}
       >
         <span
           className="shrink-0 font-serif text-lg leading-none transition-colors duration-300"
-          style={{ color: inputValue ? "#E29578" : "rgba(255,255,255,0.25)" }}
+          style={{ color: hasInput ? "#E29578" : "rgba(255,255,255,0.25)" }}
         >
           ✦
         </span>
@@ -76,7 +79,7 @@ export default function DestinationInput() {
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          placeholder={inputValue === "" ? displayRef.current : ""}
+          placeholder={!hasInput ? displayRef.current : ""}
           className="w-full bg-transparent font-serif text-lg font-light text-white/90 outline-none placeholder:text-white/30 md:text-xl"
           aria-label="Dove vuoi andare?"
         />
@@ -84,15 +87,15 @@ export default function DestinationInput() {
           type="button"
           className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full transition-all duration-300"
           style={{
-            backgroundColor: inputValue ? "#006D77" : "transparent",
-            border: inputValue ? "none" : "1px solid rgba(255,255,255,0.15)",
+            backgroundColor: hasInput ? "#006D77" : "transparent",
+            border: hasInput ? "none" : "1px solid rgba(255,255,255,0.15)",
           }}
           aria-label="Esplora"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path
               d="M3 8h10M9 4l4 4-4 4"
-              stroke={inputValue ? "#fff" : "rgba(255,255,255,0.4)"}
+              stroke={hasInput ? "#fff" : "rgba(255,255,255,0.4)"}
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -100,12 +103,45 @@ export default function DestinationInput() {
           </svg>
         </button>
       </div>
-      <p
-        className="mt-3 font-sans text-xs uppercase tracking-widest"
-        style={{ color: "rgba(255,255,255,0.25)" }}
-      >
-        Scrivi una destinazione, un&apos;emozione, un sogno
-      </p>
+
+      {/* Hint / CTA — toggles with fade + slide */}
+      <div className="relative mt-4 h-8">
+        {/* Hint text — visible when empty */}
+        <p
+          className="absolute inset-0 font-sans text-xs uppercase tracking-widest transition-all duration-300"
+          style={{
+            color: "rgba(255,255,255,0.25)",
+            opacity: hasInput ? 0 : 1,
+            transform: hasInput ? "translateY(-4px)" : "translateY(0)",
+            pointerEvents: "none",
+          }}
+        >
+          Scrivi una destinazione, un&apos;emozione, un sogno
+        </p>
+
+        {/* CTA button — visible when typing */}
+        <Link
+          href={`/genera?destinazione=${encodeURIComponent(inputValue)}`}
+          className="absolute inset-0 flex items-center gap-2 font-sans text-sm font-medium transition-all duration-300"
+          style={{
+            color: "#006D77",
+            opacity: hasInput ? 1 : 0,
+            transform: hasInput ? "translateY(0)" : "translateY(4px)",
+            pointerEvents: hasInput ? "auto" : "none",
+          }}
+        >
+          Scopri il tuo viaggio
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M2 7h10M8 3l4 4-4 4"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
+      </div>
     </div>
   );
 }
