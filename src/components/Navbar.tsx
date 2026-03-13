@@ -35,6 +35,7 @@ export default function Navbar() {
       <nav className="relative z-10 hidden items-center gap-8 md:flex">
         {[
           { label: "Come funziona", href: "#come-funziona" },
+          { label: "Genera Itinerario", href: "/genera" },
           { label: "Blog", href: "/blog" },
           { label: "Accedi", href: "/login" },
         ].map(({ label, href }) => (
